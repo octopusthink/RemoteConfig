@@ -1,0 +1,13 @@
+{
+    "welcomeMessage": "Hello from RemoteConfig!",
+    "featureFlagEnabled": true,
+    "newOnboardingEnabled": false,
+    "refreshIntervalMinutes": 60,
+    "maintenanceMode": false,
+    "supportedRegions": ["us", "ca", "gb", "de", "jp"],
+    "endpoints": {
+        "api": "https://api.example.com",
+        "support": "https://example.com/support"
+    },
+    "minimumSupportedVersion": "1.0.0"
+}
