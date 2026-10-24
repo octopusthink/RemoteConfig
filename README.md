@@ -159,7 +159,7 @@ Values are resolved by merging three layers, each overriding the previous:
 
 Refresh behaviour is controlled by `RemoteConfiguration`:
 
-- `refreshInterval` — how often the background task wakes to refresh (default: **6 hours**).
+- `refreshInterval` — how often the background task wakes to refresh (default: **12 hours**).
 - `minimumFetchInterval` — the throttle between successful network fetches
   (default: **48 hours**). `fetchRemoteUpdates(forceUpdate: true)` bypasses it.
 - `buildNumberProvider` — when you ship a new build (a higher `CFBundleVersion`),
@@ -178,7 +178,7 @@ await RemoteConfig.shared.fetchRemoteUpdates(forceUpdate: true)
 | --- | --- | --- |
 | `remoteURL` | `nil` | Endpoint polled for updates. `nil` = defaults + cache only. |
 | `defaults` | `.none` | Where baseline values come from. |
-| `refreshInterval` | 6 hours | Background refresh cadence. |
+| `refreshInterval` | 12 hours | Background refresh cadence. |
 | `minimumFetchInterval` | 48 hours | Throttle between successful fetches. |
 | `automaticallyStartUpdates` | `true` | Start the background task on `configure`. |
 | `userDefaults` | `.standard` | Store used for cached overrides. |

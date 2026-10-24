@@ -57,7 +57,10 @@ public struct RemoteConfiguration: @unchecked Sendable {
     /// Where baseline default values are loaded from on launch.
     public var defaults: DefaultsSource
 
-    /// How often the background task attempts a refresh. Defaults to 6 hours.
+    /// How often the background task attempts a refresh. Defaults to 12 hours.
+    ///
+    /// Actual network fetches are still throttled by ``minimumFetchInterval``,
+    /// so a longer wake interval just means fewer no-op wake-ups.
     public var refreshInterval: TimeInterval
 
     /// The minimum elapsed time between successful network fetches. Fetches
@@ -88,7 +91,7 @@ public struct RemoteConfiguration: @unchecked Sendable {
     public init(
         remoteURL: URL? = nil,
         defaults: DefaultsSource = .none,
-        refreshInterval: TimeInterval = 6 * 60 * 60,
+        refreshInterval: TimeInterval = 12 * 60 * 60,
         minimumFetchInterval: TimeInterval = 48 * 60 * 60,
         automaticallyStartUpdates: Bool = true,
         userDefaults: UserDefaults = .standard,

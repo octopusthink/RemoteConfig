@@ -12,29 +12,27 @@
 import Foundation
 import Observation
 
-/**
- Remote configuration values that can be changed remotely without an app update.
-
- Configure the shared instance once at launch with ``configure(_:)``, then read
- values anywhere via the subscript or the typed accessors:
-
- ```swift
- // At launch:
- RemoteConfig.configure(
-     RemoteConfiguration(
-         remoteURL: URL(string: "https://example.com/remote-config.json"),
-         defaults: .bundle(.main, resource: "remote-config", extension: "json")
-     )
- )
-
- // Anywhere (main actor):
- if RemoteConfig.shared.bool("featureFlagEnabled") { … }
- let raw = RemoteConfig.shared["someKey"].stringValue
- ```
-
- The type is `@MainActor`-isolated and `@Observable`, so SwiftUI views that read
- its values automatically update when a remote refresh changes them.
- */
+/// Remote configuration values that can be changed remotely without an app update.
+///
+/// Configure the shared instance once at launch with ``configure(_:)``, then read
+/// values anywhere via the subscript or the typed accessors:
+///
+/// ```swift
+/// // At launch:
+/// RemoteConfig.configure(
+///     RemoteConfiguration(
+///         remoteURL: URL(string: "https://example.com/remote-config.json"),
+///         defaults: .bundle(.main, resource: "remote-config", extension: "json")
+///     )
+/// )
+///
+/// // Anywhere (main actor):
+/// if RemoteConfig.shared.bool("featureFlagEnabled") { … }
+/// let raw = RemoteConfig.shared["someKey"].stringValue
+/// ```
+///
+/// The type is `@MainActor`-isolated and `@Observable`, so SwiftUI views that read
+/// its values automatically update when a remote refresh changes them.
 @MainActor
 @Observable
 public final class RemoteConfig {
@@ -46,13 +44,27 @@ public final class RemoteConfig {
     public static let shared = RemoteConfig()
 
     /// The current, merged configuration values (defaults ← cached ← remote).
-    public private(set) var configValues: [String: Any] = [:]
+    public private(set) var configValues: [String: Any] = [:] {
+        didSet {
+            // Invalidate the bridged typed-value cache; the config changed.
+            typedValueCache = [:]
+        }
+    }
 
     /// The active configuration. Replaced by ``configure(_:)``.
     public private(set) var configuration = RemoteConfiguration()
 
+    /// Cache of config values bridged to their typed Swift representations.
+    ///
+    /// `JSONSerialization` hands us `NSDictionary`/`NSArray` values whose `as?`
+    /// casts re-bridge (and re-allocate) on every access, and typed accessors
+    /// are often called from hot paths (eg. per-item filters) — so we cache the
+    /// bridged result until the config changes.
     @ObservationIgnored
-    private var updateTask: Task<Void, Never>?
+    private var typedValueCache: [String: Any] = [:]
+
+    @ObservationIgnored
+    private(set) var updateTask: Task<Void, Never>?
 
     /// Creates an unconfigured instance. Prefer ``shared``; this initializer is
     /// public mainly to support testing with isolated instances.
@@ -99,13 +111,15 @@ public final class RemoteConfig {
         switch configuration.defaults {
         case .none:
             data = nil
-        case let .data(value):
+        case .data(let value):
             data = value
-        case let .fileURL(url):
+        case .fileURL(let url):
             data = try? Data(contentsOf: url)
-        case let .bundle(bundle, resource, ext):
+        case .bundle(let bundle, let resource, let ext):
             guard let url = bundle.url(forResource: resource, withExtension: ext) else {
-                RemoteConfigLog.error("Could not find \(resource).\(ext) in bundle \(bundle.bundleIdentifier ?? "<unknown>").")
+                RemoteConfigLog.error(
+                    "Could not find \(resource).\(ext) in bundle \(bundle.bundleIdentifier ?? "<unknown>")."
+                )
                 data = nil
                 break
             }
@@ -131,7 +145,8 @@ public final class RemoteConfig {
             let data = try JSONSerialization.data(withJSONObject: configValues)
             configuration.userDefaults.set(data, forKey: cachedDataKey)
         } catch {
-            RemoteConfigLog.error("Error serializing remote config data: \(error.localizedDescription)")
+            RemoteConfigLog.error(
+                "Error serializing remote config data: \(error.localizedDescription)")
         }
     }
 
@@ -173,7 +188,9 @@ public final class RemoteConfig {
 
     /// Starts a background task that refreshes on ``RemoteConfiguration/refreshInterval``.
     public func startPeriodicUpdates() {
-        guard updateTask == nil else { return }
+        // Cancel any existing update loop first, so repeated calls (eg. from
+        // the Debug menu) don't stack multiple concurrent loops.
+        updateTask?.cancel()
 
         let interval = configuration.refreshInterval
         updateTask = Task { [weak self] in
@@ -203,8 +220,12 @@ public final class RemoteConfig {
         guard let url = configuration.remoteURL else { return }
 
         // Throttle: skip unless enough time has elapsed since the last success.
-        let lastUpdated = Date(timeIntervalSince1970: configuration.userDefaults.double(forKey: lastUpdatedKey))
-        guard forceUpdate || abs(lastUpdated.timeIntervalSinceNow) >= configuration.minimumFetchInterval else {
+        let lastUpdated = Date(
+            timeIntervalSince1970: configuration.userDefaults.double(forKey: lastUpdatedKey))
+        guard
+            forceUpdate
+                || abs(lastUpdated.timeIntervalSinceNow) >= configuration.minimumFetchInterval
+        else {
             return
         }
 
@@ -218,7 +239,9 @@ public final class RemoteConfig {
             saveCachedConfig()
             configuration.userDefaults.set(Date().timeIntervalSince1970, forKey: lastUpdatedKey)
         } catch {
-            RemoteConfigLog.error("Error fetching remote config from \(url.absoluteString): \(error.localizedDescription)")
+            RemoteConfigLog.error(
+                "Error fetching remote config from \(url.absoluteString): \(error.localizedDescription)"
+            )
         }
     }
 
@@ -251,12 +274,29 @@ public final class RemoteConfig {
 
     /// The `[String: String]` value for `key` (default empty).
     public func stringDictionary(_ key: String) -> [String: String] {
-        self[key].stringDictionaryValue ?? [:]
+        typedValue(key, default: [:])
     }
 
     /// The `[String]` value for `key` (default empty).
     public func stringArray(_ key: String) -> [String] {
-        self[key].stringArrayValue ?? []
+        typedValue(key, default: [])
+    }
+
+    /// Bridge-and-cache a typed config value. See `typedValueCache` for why
+    /// this exists.
+    func typedValue<T>(_ key: String, default defaultValue: T) -> T {
+        // Read through the observed property even on a cache hit, so SwiftUI
+        // views still track changes to the underlying values.
+        let rawValue = configValues[key]
+
+        if let cached = typedValueCache[key] as? T {
+            return cached
+        }
+
+        let value = rawValue as? T ?? defaultValue
+        typedValueCache[key] = value
+
+        return value
     }
 
     /// Decodes the structured value for `key` into a `Decodable` type, or `nil`.
