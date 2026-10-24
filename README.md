@@ -33,12 +33,12 @@ Add it to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/octpusthink/RemoteConfig.git", from: "1.0.0")
+    .package(url: "https://github.com/octopusthink/RemoteConfig.git", from: "1.0.0")
 ]
 ```
 
 Or in Xcode: **File ▸ Add Package Dependencies…** and paste the repository URL:
-`https://github.com/octpusthink/RemoteConfig.git`.
+`https://github.com/octopusthink/RemoteConfig.git`.
 
 Then `import RemoteConfig`.
 
